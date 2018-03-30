@@ -1,14 +1,12 @@
 import os
-import time
-import json
 import glob
-import mmap
 import logging
-import numpy as np
-from gym import error
+import dill
 logger = logging.getLogger(__name__)
 
+
 __all__ = ['scan_recorded_traces', 'TraceRecordingReader']
+
 
 class TraceRecordingReader:
     def __init__(self, directory):
@@ -21,44 +19,26 @@ class TraceRecordingReader:
                 self.binfiles[k].close()
                 self.binfiles[k] = None
 
-    def get_binfile(self, fn):
-        mm = self.binfiles.get(fn, None)
-        if mm: return mm
-        f = open(os.path.join(self.directory, fn), 'rb')
-        mm = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-        self.binfiles[fn] = mm
-        return mm
-
-    def load_npy(self, o):
-        mm = self.get_binfile(o['npyfile'])
-        arr = np.ndarray.__new__(np.ndarray, o['shape'], dtype=o['dtype'], buffer=mm, offset=o['npyoff'], order='C')
-        return arr
-
-    def json_decode(self, o):
-        o_type = o.get('__type', None)
-        if o_type == 'ndarray':
-            return self.load_npy(o)
-        else:
-            return o
-
     def get_recorded_batches(self):
         ret = []
-        manifest_ptn = os.path.join(self.directory, 'openaigym.trace.*.manifest.json')
+        manifest_ptn = os.path.join(self.directory, 'openaigym.trace.*.manifest.pkl')
         trace_manifest_fns = glob.glob(manifest_ptn)
         logger.debug('Trace manifests %s %s', manifest_ptn, trace_manifest_fns)
+
         for trace_manifest_fn in trace_manifest_fns:
-            trace_manifest_f = open(trace_manifest_fn, 'r')
-            trace_manifest = json.load(trace_manifest_f)
-            trace_manifest_f.close()
+
+            with open(trace_manifest_fn, 'rb') as f:
+                trace_manifest = dill.load(f)
+
             ret += trace_manifest['batches']
         return ret
 
     def get_recorded_episodes(self, batch):
-        batch_fn = os.path.join(self.directory, batch['fn'])
-        batch_f = open(batch_fn, 'r')
-        batch_d = json.load(batch_f, object_hook=self.json_decode)
-        batch_f.close()
+        filename = os.path.join(self.directory, batch['fn'])
+        with open(filename, 'rb') as f:
+            batch_d = dill.load(f)
         return batch_d['episodes']
+
 
 def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
     """
@@ -72,5 +52,6 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
         for ep in rdr.get_recorded_episodes(batch):
             episode_cb(ep['observations'], ep['actions'], ep['rewards'])
             added_episode_count += 1
-            if max_episodes is not None and added_episode_count >= max_episodes: return
+            if max_episodes is not None and added_episode_count >= max_episodes:
+                return
     rdr.close()

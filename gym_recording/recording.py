@@ -1,18 +1,20 @@
 import os
 import time
-import json
-import glob
 import logging
 import numpy as np
-import gym
-from gym import error
-from gym.utils import atomic_write, closer
+from gym.utils import atomic_write
+import dill
 logger = logging.getLogger(__name__)
+
+
+def always_true(x):
+    return True
 
 
 class TraceRecording(object):
     _id_counter = 0
-    def __init__(self, directory=None):
+
+    def __init__(self, directory=None, episode_filter=None, frame_filter=None):
         """
         Create a TraceRecording, writing into directory
         """
@@ -24,6 +26,12 @@ class TraceRecording(object):
         self.directory = directory
         self.file_prefix = 'openaigym.trace.{}.{}'.format(self._id_counter, os.getpid())
         TraceRecording._id_counter += 1
+
+        self.episode_filter = always_true if episode_filter is None else episode_filter
+        assert callable(self.episode_filter)
+
+        self.frame_filter = always_true if frame_filter is None else frame_filter
+        assert callable(self.frame_filter)
 
         self.closed = False
 
@@ -46,25 +54,33 @@ class TraceRecording(object):
 
     def add_step(self, action, observation, reward):
         assert not self.closed
+
         self.actions.append(action)
-        self.observations.append(observation)
         self.rewards.append(reward)
-        self.buffered_step_count += 1
+
+        frame_id = len(self.actions)
+        if self.frame_filter(frame_id):
+            self.observations.append(observation)
+            self.buffered_step_count += 1
 
     def end_episode(self):
         """
         if len(observations) == 0, nothing has happened yet.
         If len(observations) == 1, then len(actions) == 0, and we have only called reset and done a null episode.
         """
+        print("End of episode {}".format(self.episode_id))
         if len(self.observations) > 0:
-            if len(self.episodes)==0:
+            if len(self.episodes) == 0:
                 self.episodes_first = self.episode_id
 
-            self.episodes.append({
-                'actions': optimize_list_of_ndarrays(self.actions),
-                'observations': optimize_list_of_ndarrays(self.observations),
-                'rewards': optimize_list_of_ndarrays(self.rewards),
-            })
+            if self.episode_filter(self.episode_id):
+                print("Storing episode {}".format(self.episode_id))
+                self.episodes.append({
+                    'actions': optimize_list_of_ndarrays(self.actions),
+                    'observations': optimize_list_of_ndarrays(self.observations),
+                    'rewards': optimize_list_of_ndarrays(self.rewards),
+                })
+
             self.actions = []
             self.observations = []
             self.rewards = []
@@ -81,36 +97,21 @@ class TraceRecording(object):
         don't compress much, only by 30%, and it's a goal to be able to read the files from C++ or a browser someday.
         """
 
-        batch_fn = '{}.ep{:09}.json'.format(self.file_prefix, self.episodes_first)
-        bin_fn = '{}.ep{:09}.bin'.format(self.file_prefix, self.episodes_first)
-
-        with atomic_write.atomic_write(os.path.join(self.directory, batch_fn), False) as batch_f:
-            with atomic_write.atomic_write(os.path.join(self.directory, bin_fn), True) as bin_f:
-
-                def json_encode(obj):
-                    if isinstance(obj, np.ndarray):
-                        offset = bin_f.tell()
-                        while offset%8 != 0:
-                            bin_f.write(b'\x00')
-                            offset += 1
-                        obj.tofile(bin_f)
-                        size = bin_f.tell() - offset
-                        return {'__type': 'ndarray', 'shape': obj.shape, 'order': 'C', 'dtype': str(obj.dtype), 'npyfile': bin_fn, 'npyoff': offset, 'size': size}
-                    return obj
-
-                json.dump({'episodes': self.episodes}, batch_f, default=json_encode)
-
-                bytes_per_step = float(bin_f.tell() + batch_f.tell()) / float(self.buffered_step_count)
+        filename = '{}.ep{:09}.pkl'.format(self.file_prefix, self.episodes_first)
+        print("Saving data to {}".format(filename))
+        with atomic_write.atomic_write(os.path.join(self.directory, filename), True) as f:
+            dill.dump({'episodes': self.episodes}, f, protocol=dill.HIGHEST_PROTOCOL, recurse=False)
+            bytes_per_step = float(f.tell() + f.tell()) / float(self.buffered_step_count)
 
         self.batches.append({
             'first': self.episodes_first,
             'len': len(self.episodes),
-            'fn': batch_fn})
+            'fn': filename})
 
         manifest = {'batches': self.batches}
-        manifest_fn = os.path.join(self.directory, '{}.manifest.json'.format(self.file_prefix))
-        with atomic_write.atomic_write(os.path.join(self.directory, manifest_fn), False) as f:
-            json.dump(manifest, f)
+        manifest_fn = os.path.join(self.directory, '{}.manifest.pkl'.format(self.file_prefix))
+        with atomic_write.atomic_write(os.path.join(self.directory, manifest_fn), True) as f:
+            dill.dump(manifest, f, protocol=dill.HIGHEST_PROTOCOL, recurse=False)
 
         # Adjust batch size, aiming for 5 MB per file.
         # This seems like a reasonable tradeoff between:
@@ -134,6 +135,7 @@ class TraceRecording(object):
                 self.save_complete()
             self.closed = True
             logger.info('Wrote traces to %s', self.directory)
+
 
 def optimize_list_of_ndarrays(x):
     """
