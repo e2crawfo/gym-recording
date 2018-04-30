@@ -109,7 +109,7 @@ class TraceRecording(object):
             'fn': filename})
 
         manifest = {'batches': self.batches}
-        manifest_fn = os.path.join(self.directory, '{}.manifest.pkl'.format(self.file_prefix))
+        manifest_fn = '{}.manifest.pkl'.format(self.file_prefix)
         with atomic_write.atomic_write(os.path.join(self.directory, manifest_fn), True) as f:
             dill.dump(manifest, f, protocol=dill.HIGHEST_PROTOCOL, recurse=False)
 
