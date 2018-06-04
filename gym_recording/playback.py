@@ -2,6 +2,8 @@ import os
 import glob
 import logging
 import dill
+import numpy as np
+
 logger = logging.getLogger(__name__)
 
 
@@ -47,11 +49,16 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
     if you want to end the iteration early)
     """
     rdr = TraceRecordingReader(directory)
-    added_episode_count = 0
-    for batch in rdr.get_recorded_batches():
+
+    recorded_batches = rdr.get_recorded_batches()
+
+    if max_episodes is None:
+        batch_indices = range(len(recorded_batches))
+    else:
+        batch_indices = np.random.choice(len(recorded_batches), size=max_episodes, replace=False)
+
+    for batch_idx in batch_indices:
+        batch = recorded_batches[batch_idx]
         for ep in rdr.get_recorded_episodes(batch):
             episode_cb(ep['observations'], ep['actions'], ep['rewards'])
-            added_episode_count += 1
-            if max_episodes is not None and added_episode_count >= max_episodes:
-                return
     rdr.close()

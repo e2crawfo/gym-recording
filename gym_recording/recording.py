@@ -14,11 +14,15 @@ def always_true(x):
 class TraceRecording(object):
     _id_counter = 0
 
-    def __init__(self, directory=None, episode_filter=None, frame_filter=None):
+    def __init__(self, directory=None, episode_filter=None, frame_filter=None, reward_classes=None):
         """
-        Create a TraceRecording, writing into directory
-        """
+        Create a TraceRecording, writing into directory.
 
+        If `reward_classes` is not None, it must be a list of reward values. Each observed reward
+        is quantized to one of these values, and an attempt is made to store a dataset that
+        is balanced with respect to these reward classes.
+
+        """
         if directory is None:
             directory = os.path.join('/tmp', 'openai.gym.{}.{}'.format(time.time(), os.getpid()))
             os.mkdir(directory)
@@ -32,6 +36,13 @@ class TraceRecording(object):
 
         self.frame_filter = always_true if frame_filter is None else frame_filter
         assert callable(self.frame_filter)
+
+        self.reward_classes = None if reward_classes is None else np.array(reward_classes)
+        self.reward_freqs = {} if self.reward_classes is None else {i: 0 for i in range(len(self.reward_classes))}
+        self.keep_freqs = {} if self.reward_classes is None else {i: 0 for i in range(len(self.reward_classes))}
+
+        self.n_seen = 0
+        self.n_recorded = 0
 
         self.closed = False
 
@@ -50,18 +61,40 @@ class TraceRecording(object):
     def add_reset(self, observation):
         assert not self.closed
         self.end_episode()
-        self.observations.append(observation)
+        self.obs = observation
 
     def add_step(self, action, observation, reward):
+        self.n_seen += 1
+        if self.reward_classes is None:
+            frame_id = len(self.actions)
+            keep = self.frame_filter(frame_id)
+            print("n_recorded: {}".format(self.n_recorded))
+        else:
+            reward_class_idx = np.argmin(np.abs(reward - self.reward_classes))
+            self.reward_freqs[reward_class_idx] += 1
+            min_freq = min(self.reward_freqs.values()) / self.n_seen
+            keep_prob = min_freq / (self.reward_freqs[reward_class_idx] / self.n_seen)
+
+            keep = np.random.rand() < keep_prob
+
+            if keep:
+                self.keep_freqs[reward_class_idx] += 1
+                print("keep")
+                print(self.keep_freqs)
+                print("reward")
+                print(self.reward_freqs)
+
         assert not self.closed
 
-        self.actions.append(action)
-        self.rewards.append(reward)
+        if keep:
+            self.n_recorded += 1
+            self.actions.append(action)
+            self.rewards.append(reward)
 
-        frame_id = len(self.actions)
-        if self.frame_filter(frame_id):
-            self.observations.append(observation)
+            self.observations.append(self.obs)
             self.buffered_step_count += 1
+
+        self.obs = observation
 
     def end_episode(self):
         """

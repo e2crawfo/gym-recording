@@ -50,7 +50,7 @@ class TraceRecordingWrapper(gym.Wrapper):
 
 
     """
-    def __init__(self, env, directory=None, episode_filter=None, frame_filter=None):
+    def __init__(self, env, directory=None, episode_filter=None, frame_filter=None, reward_classes=None):
         """
         Create a TraceRecordingWrapper around env, writing into directory
         """
@@ -58,7 +58,7 @@ class TraceRecordingWrapper(gym.Wrapper):
         self.recording = None
         trace_record_closer.register(self)
 
-        self.recording = TraceRecording(directory, episode_filter, frame_filter)
+        self.recording = TraceRecording(directory, episode_filter, frame_filter, reward_classes)
         self.directory = self.recording.directory
 
     def step(self, action):
