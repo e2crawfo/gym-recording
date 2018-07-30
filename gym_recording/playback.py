@@ -28,11 +28,10 @@ class TraceRecordingReader:
         logger.debug('Trace manifests %s %s', manifest_ptn, trace_manifest_fns)
 
         for trace_manifest_fn in trace_manifest_fns:
-
             with open(trace_manifest_fn, 'rb') as f:
                 trace_manifest = dill.load(f)
 
-            ret += trace_manifest['batches']
+            ret.extend(trace_manifest['batches'])
         return ret
 
     def get_recorded_episodes(self, batch):
@@ -52,13 +51,14 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
 
     recorded_batches = rdr.get_recorded_batches()
 
-    if max_episodes is None:
-        batch_indices = range(len(recorded_batches))
-    else:
-        batch_indices = np.random.choice(len(recorded_batches), size=max_episodes, replace=False)
+    all_episodes = [ep for batch in recorded_batches for ep in rdr.get_recorded_episodes(batch)]
 
-    for batch_idx in batch_indices:
-        batch = recorded_batches[batch_idx]
-        for ep in rdr.get_recorded_episodes(batch):
-            episode_cb(ep['observations'], ep['actions'], ep['rewards'])
+    if max_episodes is None or max_episodes >= len(all_episodes):
+        episodes = all_episodes
+    else:
+        episode_indices = np.random.choice(len(all_episodes), size=max_episodes, replace=False)
+        episodes = [all_episodes[i] for i in episode_indices]
+
+    for ep in episodes:
+        episode_cb(ep['observations'], ep['actions'], ep['rewards'])
     rdr.close()

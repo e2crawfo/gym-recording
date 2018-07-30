@@ -1,11 +1,5 @@
-import os
-import time
-import json
-import glob
 import logging
-import numpy as np
 import gym
-from gym import error
 from gym.utils import closer
 from gym_recording.recording import TraceRecording
 logger = logging.getLogger(__name__)
@@ -14,6 +8,7 @@ __all__ = ['TraceRecordingWrapper']
 
 
 trace_record_closer = closer.Closer()
+
 
 class TraceRecordingWrapper(gym.Wrapper):
     """
@@ -79,3 +74,5 @@ class TraceRecordingWrapper(gym.Wrapper):
         """
         if self.recording is not None:
             self.recording.close()
+        if self.env:
+            self.env.close()
