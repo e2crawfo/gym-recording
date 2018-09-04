@@ -53,6 +53,13 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
 
     all_episodes = [ep for batch in recorded_batches for ep in rdr.get_recorded_episodes(batch)]
 
+    print("Found {} episodes.".format(len(all_episodes)))
+    ep_lengths = [len(ep['rewards']) for ep in all_episodes]
+    print("Episode length stats:")
+    import pandas as pd
+    print(pd.DataFrame(ep_lengths).describe())
+    print("Total number of observations: {}".format(sum(ep_lengths)))
+
     if max_episodes is None or max_episodes >= len(all_episodes):
         episodes = all_episodes
     else:
