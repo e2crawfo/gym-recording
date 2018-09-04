@@ -41,7 +41,7 @@ class TraceRecordingReader:
         return batch_d['episodes']
 
 
-def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
+def scan_recorded_traces(directory, episode_cb=None, max_episodes=None, episode_range=None):
     """
     Go through all the traces recorded to directory, and call episode_cb for every episode.
     Set max_episodes to end after a certain number (or you can just throw an exception from episode_cb
@@ -53,7 +53,10 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None):
 
     all_episodes = [ep for batch in recorded_batches for ep in rdr.get_recorded_episodes(batch)]
 
-    print("Found {} episodes.".format(len(all_episodes)))
+    if episode_range:
+        all_episodes = all_episodes[slice(*episode_range)]
+
+    print("Found {} episodes (after applying episode range).".format(len(all_episodes)))
     ep_lengths = [len(ep['rewards']) for ep in all_episodes]
     print("Episode length stats:")
     import pandas as pd
