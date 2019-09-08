@@ -70,5 +70,8 @@ def scan_recorded_traces(directory, episode_cb=None, max_episodes=None, episode_
         episodes = [all_episodes[i] for i in episode_indices]
 
     for ep in episodes:
-        episode_cb(ep['observations'], ep['actions'], ep['rewards'])
+        done = episode_cb(ep['observations'], ep['actions'], ep['rewards'])
+        if done:
+            break
+
     rdr.close()
